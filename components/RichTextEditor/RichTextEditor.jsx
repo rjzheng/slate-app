@@ -1,5 +1,5 @@
 import { Box, Tooltip } from "@chakra-ui/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createEditor, Editor, Path, Range, Text, Transforms } from "slate";
 import { Editable, ReactEditor, Slate, withReact } from "slate-react";
 import { withHistory } from "slate-history";
@@ -25,10 +25,10 @@ const RichTextEditor = () => {
   const [value, setValue] = useState([
     {
       type: "paragraph",
-      children: [{ text: "A line of text in a paragraph." }],
+      children: [{ text: "" }],
     },
   ]);
-  const [tracking_link] = useState("{{TRAKING_LINK}}");
+  const [tracking_link] = useState("{{TRACKING_LINK}}");
 
   const renderElement = useCallback((props) => {
     switch (props.element.type) {
@@ -39,56 +39,54 @@ const RichTextEditor = () => {
     }
   }, []);
 
-  // const handleKeyUp = (event) => {
-  //   const regex = new RegExp(/{{TRACKING_LINK}}/g);
-  //   if (event.key === "`" && event.ctrlKey) {
-  //     // Prevent the "`" from being inserted by default.
-  //     event.preventDefault();
-  //     // Otherwise, set the currently selected blocks type to "code".
-  //     Transforms.setNodes(
-  //       editor,
-  //       { type: "tooltip" },
-  //       { match: (n) => Editor.isBlock(editor, n) }
-  //     );
-  //   }
-  // };
+  const insertTooltip = (editor) => {
+    const tooltip = {
+      type: "tooltip",
+      children: [{ text: "{{TRACKING_LINK}}" }],
+    };
+
+    const p = {
+      type: "paragraph",
+      children: [{ text: "" }],
+    };
+
+    Transforms.insertNodes(editor, tooltip);
+    Transforms.insertNodes(editor, p);
+    Transforms.move(editor);
+  };
 
   return (
     <Box className={styles.container}>
       <Slate
         editor={editor}
         value={value}
-        onChange={(value) => setValue(value)}>
-        <Editable
-          renderElement={renderElement}
-          renderLeaf={(props) => <Leaf {...props} />}
-          className={styles.editor}
-          onKeyDown={(event) => {
-            if (event.key === "`" && event.ctrlKey) {
-              // Prevent the "`" from being inserted by default.
-              event.preventDefault();
-              // Otherwise, set the currently selected blocks type to "code".
-              const mention = {
-                type: "tooltip",
-                children: [{ text: "hello World" }],
-              };
-              Transforms.insertFragment(editor, mention);
-              Transforms.move(editor);
-              // Transforms.setNodes(
-              //   editor,
-              //   { type: "tooltip" },
-              //   {
-              //     match: (n) => {
-              //       if (n.text) {
-              //         console.log(n.text);
-              //         console.log(tracking_link);
-              //       }
-              //     },
-              //   }
-              // );
+        onChange={(value) => {
+          setValue(value);
+
+          const { selection } = editor;
+
+          if (selection && Range.isCollapsed(selection)) {
+            const [start] = Range.edges(selection);
+            const wordBefore = Editor.before(editor, start, { unit: "word" });
+            const before = wordBefore && Editor.before(editor, wordBefore);
+            const beforeRange = before && Editor.range(editor, before, start);
+            const beforeText =
+              beforeRange && Editor.string(editor, beforeRange);
+            const beforeMatch = beforeText && beforeText.match(/^{(\w+)$/);
+            const after = Editor.after(editor, start);
+            const afterRange = Editor.range(editor, start, after);
+            const afterText = Editor.string(editor, afterRange);
+            const afterMatch = afterText.match(/^(\s|$)/);
+
+            if (beforeMatch && afterMatch) {
+              Transforms.select(editor, beforeRange);
+              insertTooltip(editor);
+              return;
             }
-          }}
-        />
+          }
+        }}
+      >
+        <Editable renderElement={renderElement} className={styles.editor} />
       </Slate>
     </Box>
   );
@@ -100,14 +98,15 @@ const TooltipElement = (props) => {
       {...props.attributes}
       label="Hello World"
       placement="top-end"
-      hasArrow>
+      hasArrow
+    >
       <span>{props.children}</span>
     </Tooltip>
   );
 };
 
 const DefaultElement = (props) => {
-  return <p {...props.attributes}>{props.children}</p>;
+  return <span {...props.attributes}>{props.children}</span>;
 };
 
 export { RichTextEditor };
